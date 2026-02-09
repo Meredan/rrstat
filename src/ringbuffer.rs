@@ -2,14 +2,13 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 use crate::types::Sample;
 
-/// A thread-safe ring buffer with a fixed capacity.
+/// A thread-safe ring buffer with a fixed capacity - warehouse for samples
 pub struct RingBuffer {
     data: Mutex<VecDeque<Sample>>,
     capacity: usize,
 }
 
 impl RingBuffer {
-    /// Creates a new RingBuffer with the specified capacity.
     pub fn new(capacity: usize) -> Self {
         Self {
             data: Mutex::new(VecDeque::with_capacity(capacity)),

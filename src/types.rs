@@ -1,5 +1,6 @@
 use std::fmt;
 
+/// A single sample of the measured event
 #[derive(Debug, Clone, Copy)]
 pub struct Sample {
     pub value: u64,

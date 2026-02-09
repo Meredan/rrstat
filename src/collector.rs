@@ -6,7 +6,6 @@ use perf_event::Counter;
 use crate::types::Sample;
 use crate::ringbuffer::RingBuffer;
 
-/// A helper to "parse" raw values into Sample struct
 fn parse_sample(value: u64, pid: i32, start_time: Instant) -> Sample {
     Sample {
         value,
@@ -23,12 +22,14 @@ pub struct Collector {
     pid: i32,
 }
 
+/// Collector polls the counter and pushes samples to the ring buffer
 impl Collector {
     pub fn new(counter: Counter, buffer: Arc<RingBuffer>, running: Arc<AtomicBool>, pid: i32) -> Self {
         Self { counter, buffer, running, pid }
     }
 
-   pub fn spawn(mut self) -> thread::JoinHandle<()> {
+   /// New thread collects samples, while main can handle Ctrl+C -> it's unblocked
+    pub fn spawn(mut self) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             let start_time = Instant::now();
             while self.running.load(Ordering::Relaxed) {
