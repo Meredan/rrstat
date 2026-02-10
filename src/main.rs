@@ -41,7 +41,10 @@ fn main() -> Result<()> {
     collector_handle.join().unwrap();
     
     let samples = buffer.drain();
-    println!("Collected {} samples", samples.len());
+    let mut aggregator = rrstat::aggregator::Aggregator::new();
+    aggregator.process_samples(samples);
+    let report = aggregator.generate_report();
+    rrstat::report::print_summary(&report);
     
     Ok(())
 }
