@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
 
 /// memory mapping from /proc/[pid]/maps
 #[derive(Debug, Clone)]

@@ -1,14 +1,13 @@
 use crate::maps;
-use addr2line::{Context};
+use addr2line::Context;
 use anyhow::{anyhow, Context as _, Result};
-use gimli::{EndianRcSlice, RunTimeEndian};
-use object::{Object, ObjectSection};
+use gimli::{EndianReader, RunTimeEndian};
 use std::collections::HashMap;
 use std::fs;
 use std::rc::Rc;
 
 // Type alias for the complex Context type from addr2line
-type Addr2LineContext = Context<EndianRcSlice<RunTimeEndian>>;
+type Addr2LineContext = Context<EndianReader<RunTimeEndian, Rc<[u8]>>>;
 
 #[derive(Debug, Clone)]
 pub struct SymbolInfo {

@@ -77,19 +77,24 @@ mod tests {
         }
         assert!(addr != 0, "Could not find target_function address");
         
-        let mut absolute_addr = 0;
+        // Find load base (the mapping with offset 0 for the binary)
+        let mut load_base = 0;
         let maps_path = format!("/proc/{}/maps", pid);
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(150));
         let maps_content = std::fs::read_to_string(maps_path)?;
         for line in maps_content.lines() {
-            if line.contains("dummy_target") && line.contains("r-x") {
-                let start_hex = line.split('-').next().unwrap();
-                let start_addr = u64::from_str_radix(start_hex, 16)?;
-                absolute_addr = start_addr + addr;
-                break;
+            if line.contains("dummy_target") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                let range: Vec<&str> = parts[0].split('-').collect();
+                let offset = u64::from_str_radix(parts[2], 16)?;
+                if offset == 0 {
+                    load_base = u64::from_str_radix(range[0], 16)?;
+                    break;
+                }
             }
         }
-        assert!(absolute_addr != 0, "Could not find base address for dummy_target");
+        assert!(load_base != 0, "Could not find load base for dummy_target");
+        let absolute_addr = load_base + addr;
 
         let mut resolver = SymbolResolver::new();
         let info = resolver.resolve(pid, absolute_addr);
