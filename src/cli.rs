@@ -25,3 +25,20 @@ pub fn parse_event(event_name: &str) -> Result<Event> {
         _ => bail!("Unknown event: {}", event_name),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_cpu_cycles() {
+        let event = parse_event("cpu-cycles");
+        assert!(event.is_ok());
+    }
+
+    #[test]
+    fn test_parse_invalid() {
+        let event = parse_event("invalid-event-name");
+        assert!(event.is_err());
+    }
+}

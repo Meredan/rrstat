@@ -22,7 +22,7 @@ mod tests {
 
     #[test]
     fn test_ring_buffer_overwrite() {
-        let rb = RingBuffer::new(2); // Tiny capacity
+        let rb = RingBuffer::new(2); 
         let s1 = Sample { value: 10, pid: 1, timestamp: 100, instruction_pointer: 0 };
         let s2 = Sample { value: 20, pid: 1, timestamp: 200, instruction_pointer: 0 };
         let s3 = Sample { value: 30, pid: 1, timestamp: 300, instruction_pointer: 0 };
@@ -51,17 +51,14 @@ mod tests {
         "#;
         std::fs::write("dummy_target.c", source)?;
         
-        // Compile with debug info (-g)
         let status = Command::new("gcc")
             .args(&["-g", "dummy_target.c", "-o", "dummy_target"])
             .status()?;
         assert!(status.success());
         
-        // Run it in background
         let mut child = Command::new("./dummy_target").spawn()?;
         let pid = child.id();
         
-        //  Find address of target_function (using nm)
         let output = Command::new("nm")
             .arg("dummy_target")
             .output()?;
@@ -77,7 +74,6 @@ mod tests {
         }
         assert!(addr != 0, "Could not find target_function address");
         
-        // Find load base (the mapping with offset 0 for the binary)
         let mut load_base = 0;
         let maps_path = format!("/proc/{}/maps", pid);
         std::thread::sleep(std::time::Duration::from_millis(150));
@@ -113,5 +109,90 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_end_to_end_report_generation() -> Result<()> {
+        use rrstat::aggregator::Aggregator;
+        use rrstat::types::Sample;
+        use std::time::Duration;
+
+        let source = r#"
+            #include <stdio.h>
+            #include <unistd.h>
+            void func_a() { usleep(100); }
+            void func_b() { usleep(100); }
+            int main() {
+                while(1) { func_a(); func_b(); }
+                return 0;
+            }
+        "#;
+        std::fs::write("dummy_agg.c", source)?;
+        let status = Command::new("gcc")
+            .args(&["-g", "dummy_agg.c", "-o", "dummy_agg"])
+            .status()?;
+        assert!(status.success());
+        
+        let mut child = Command::new("./dummy_agg").spawn()?;
+        let pid = child.id();
+        std::thread::sleep(Duration::from_millis(150));
+   
+        let mut addr_a = 0;
+        let mut addr_b = 0;
+        
+        // Use nm to find offsets
+        let output = Command::new("nm").arg("dummy_agg").output()?;
+        let output_str = String::from_utf8(output.stdout)?;
+        for line in output_str.lines() {
+            if line.contains("func_a") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                addr_a = u64::from_str_radix(parts[0], 16)?;
+            } else if line.contains("func_b") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                addr_b = u64::from_str_radix(parts[0], 16)?;
+            }
         }
+        
+        // Adjust for PIE load base
+        let mut load_base = 0;
+        let maps_path = format!("/proc/{}/maps", pid);
+        let maps_content = std::fs::read_to_string(maps_path)?;
+        for line in maps_content.lines() {
+            if line.contains("dummy_agg") {
+                 let parts: Vec<&str> = line.split_whitespace().collect();
+                 let range: Vec<&str> = parts[0].split('-').collect();
+                 let offset = u64::from_str_radix(parts[2], 16).unwrap_or(1);
+                 if offset == 0 {
+                     load_base = u64::from_str_radix(range[0], 16)?;
+                     break;
+                 }
+            }
+        }
+        
+        // Create fake samples
+        let s1 = Sample { pid: pid as i32, instruction_pointer: load_base + addr_a, value: 1, timestamp: 100 };
+        let s2 = Sample { pid: pid as i32, instruction_pointer: load_base + addr_b, value: 1, timestamp: 200 };
+        let s3 = Sample { pid: pid as i32, instruction_pointer: load_base + addr_a, value: 1, timestamp: 300 };
+
+        let mut agg = Aggregator::new();
+        agg.process_samples(vec![s1, s2, s3]);
+        
+        let report = agg.generate_report();
+        println!("Report: {:?}", report);
+
+        // Verification
+        assert_eq!(report.total_samples, 3);
+        let has_func_a = report.stats.iter().any(|s| s.name.contains("func_a") && s.count == 2);
+        let has_func_b = report.stats.iter().any(|s| s.name.contains("func_b") && s.count == 1);
+        
+        // Cleanup
+        let _ = child.kill();
+        let _ = std::fs::remove_file("dummy_agg");
+        let _ = std::fs::remove_file("dummy_agg.c");
+
+        assert!(has_func_a, "Report missing func_a with count 2");
+        assert!(has_func_b, "Report missing func_b with count 1");
+
+        Ok(())
+    }
 }
