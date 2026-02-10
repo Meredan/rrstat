@@ -5,3 +5,5 @@ pub mod ringbuffer;
 pub mod collector;
 pub mod symbols;
 pub mod maps;
+pub mod aggregator;
+pub mod report;

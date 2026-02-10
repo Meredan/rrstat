@@ -9,6 +9,20 @@ pub struct Sample {
     pub instruction_pointer: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct FunctionStats {
+    pub name: String,
+    pub count: usize,
+    pub percentage: f64,
+}
+
+#[derive(Debug)]
+pub struct Report {
+    pub total_samples: usize,
+    pub stats: Vec<FunctionStats>,
+    pub folded_stacks: Vec<String>,
+}
+
 impl fmt::Display for Sample {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
