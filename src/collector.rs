@@ -6,20 +6,37 @@ use perf_event::Counter;
 use crate::types::Sample;
 use crate::ringbuffer::RingBuffer;
 
+use libc;
+
 fn read_instruction_pointer(pid: i32) -> u64 {
-    let path = format!("/proc/{}/stat", pid);
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        // Fields in /proc/[pid]/stat are space-separated after comm (which may contain spaces)
-        // Find the closing ')' of comm field, then parse remaining fields
-        if let Some(pos) = content.rfind(')') {
-            let fields: Vec<&str> = content[pos + 2..].split_whitespace().collect();
-            // kstkeip is field 30 in stat (1-indexed), which is index 27 after comm
-            if fields.len() > 27 {
-                return fields[27].parse::<u64>().unwrap_or(0);
-            }
+    unsafe {
+        // attach to the process to stop it
+        if libc::ptrace(libc::PTRACE_ATTACH, pid, 0, 0) < 0 {
+            return 0;
         }
+
+        // wait for the process to stop
+        let mut status = 0;
+        if libc::waitpid(pid, &mut status, 0) < 0 {
+            libc::ptrace(libc::PTRACE_DETACH, pid, 0, 0);
+            return 0;
+        }
+
+        let mut regs: libc::user_regs_struct = std::mem::zeroed();
+        let res = libc::ptrace(
+            libc::PTRACE_GETREGS,
+            pid,
+            0,
+            &mut regs as *mut _ as *mut libc::c_void,
+        );
+
+        libc::ptrace(libc::PTRACE_DETACH, pid, 0, 0);
+
+        if res < 0 {
+            return 0;
+        }
+        regs.rip
     }
-    0
 }
 
 fn parse_sample(value: u64, pid: i32, start_time: Instant, ip: u64) -> Sample {

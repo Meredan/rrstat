@@ -195,4 +195,72 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_real_collector() -> Result<()> {
+        use rrstat::collector::Collector;
+        use rrstat::profiler::PerfCounter;
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        use std::time::Duration;
+
+        // 1. Compile a CPU-bound target
+        let source = r#"
+            #include <math.h>
+            #include <stdio.h>
+            int main() {
+                double x = 0;
+                while(1) { x += sin(x); }
+                return 0;
+            }
+        "#;
+        std::fs::write("cpu_burner.c", source)?;
+        let status = Command::new("gcc")
+            .args(&["-g", "cpu_burner.c", "-o", "cpu_burner", "-lm"]) // Link math lib
+            .status()?;
+        assert!(status.success());
+
+        let mut child = Command::new("./cpu_burner").spawn()?;
+        let pid = child.id() as i32;
+        
+        let event = parse_event("cpu-cycles")?;
+        let mut pc = PerfCounter::new(pid, event)?;
+        pc.enable()?;
+
+        let buffer = Arc::new(RingBuffer::new(1024));
+        let running = Arc::new(AtomicBool::new(true));
+        
+        let collector = Collector::new(pc.counter, Arc::clone(&buffer), Arc::clone(&running), pid);
+        let handle = collector.spawn();
+
+        std::thread::sleep(Duration::from_millis(500));
+        
+        running.store(false, Ordering::Relaxed);
+        handle.join().unwrap();
+        let samples = buffer.drain();
+        
+        let _ = child.kill();
+        let _ = std::fs::remove_file("cpu_burner");
+        let _ = std::fs::remove_file("cpu_burner.c");
+
+        println!("Collected {} samples", samples.len());
+        assert!(samples.len() > 0, "No samples collected!");
+        
+   
+        let non_zero_ips = samples.iter().filter(|s| s.instruction_pointer != 0).count();
+        println!("Non-zero IPs: {}", non_zero_ips);
+        assert!(non_zero_ips > 0, "All samples had 0 IP (ptrace failed?)");
+
+        use rrstat::aggregator::Aggregator;
+        use rrstat::symbols::SymbolResolver;
+        let mut agg = Aggregator::new();
+        agg.process_samples(samples);
+        let report = agg.generate_report();
+        
+        println!("Collected Report:");
+        for stat in &report.stats {
+            println!("  Function: {}, Count: {}", stat.name, stat.count);
+        }
+
+        Ok(())
+    }
 }

@@ -17,7 +17,7 @@ pub struct SymbolInfo {
 }
 
 pub struct SymbolResolver {
-    contexts: HashMap<u32, Addr2LineContext>,
+    contexts: HashMap<String, Addr2LineContext>,
     cache: HashMap<(u32, u64), SymbolInfo>,
 }
 
@@ -29,13 +29,9 @@ impl SymbolResolver {
         }
     }
 
-    fn load_binary(&self, pid: u32) -> Result<Addr2LineContext> {
-        // profiling only the main binary of the PID.
-        let exe_path = std::fs::read_link(format!("/proc/{}/exe", pid))
-            .with_context(|| format!("Failed to read /proc/{}/exe", pid))?;
-
-        let file = fs::File::open(&exe_path)
-            .with_context(|| format!("Failed to open binary {:?}", exe_path))?;
+    fn load_binary(&self, path: &str) -> Result<Addr2LineContext> {
+        let file = fs::File::open(path)
+            .with_context(|| format!("Failed to open binary {:?}", path))?;
         
         let data = unsafe { memmap2::Mmap::map(&file)? };
         let object = object::File::parse(&*data)?;
@@ -58,12 +54,12 @@ impl SymbolResolver {
         self.cache.insert((pid, addr), info);
     }
 
-    fn get_context(&mut self, pid: u32) -> Result<&Addr2LineContext> {
-        if !self.contexts.contains_key(&pid) {
-            let context = self.load_binary(pid)?;
-            self.contexts.insert(pid, context);
+    fn get_context(&mut self, path: &str) -> Result<&Addr2LineContext> {
+        if !self.contexts.contains_key(path) {
+            let context = self.load_binary(path)?;
+            self.contexts.insert(path.to_string(), context);
         }
-        self.contexts.get(&pid).ok_or_else(|| anyhow!("Failed to get context after insertion"))
+        self.contexts.get(path).ok_or_else(|| anyhow!("Failed to get context after insertion"))
     }
 
 
@@ -79,7 +75,18 @@ impl SymbolResolver {
         let relative_addr = addr - mapping.start + mapping.offset;
 
         let info = {
-            let context = self.get_context(pid)?;
+            let context = match self.get_context(&mapping.pathname) {
+                Ok(ctx) => ctx,
+                Err(e) => {
+                    // This is expected for [vdso], [vvar], anonymous mappings, or inaccessible files
+                    // We don't want to error out the whole resolution, just return a fallback info later
+                    return Ok(SymbolInfo {
+                        function: Some(format!("unknown_offset_0x{:x}", relative_addr)),
+                        file: Some(mapping.pathname),
+                        line: None,
+                    });
+                }
+            };
             
             // addr2line 0.21.0 find_frames returns LookupResult
             let mut frames = match context.find_frames(relative_addr) {
@@ -104,7 +111,11 @@ impl SymbolResolver {
                     line,
                 })
             } else {
-                None
+                Some(SymbolInfo {
+                    function: Some(format!("{}+0x{:x}", mapping.pathname, relative_addr)),
+                    file: Some(mapping.pathname),
+                    line: None,
+                })
             }
         };
 
