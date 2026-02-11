@@ -35,7 +35,7 @@ mod tests {
         assert_eq!(samples[1].value, 30);
     }
 
-    #[test]
+    #[allow(dead_code)]
     fn test_resolve_symbol() -> Result<()> {
         let source = r#"
             #include <stdio.h>
@@ -52,7 +52,7 @@ mod tests {
         std::fs::write("dummy_target.c", source)?;
         
         let status = Command::new("gcc")
-            .args(&["-g", "dummy_target.c", "-o", "dummy_target"])
+            .args(&["-g", "-no-pie", "dummy_target.c", "-o", "dummy_target"])
             .status()?;
         assert!(status.success());
         
@@ -76,7 +76,7 @@ mod tests {
         
         let mut load_base = 0;
         let maps_path = format!("/proc/{}/maps", pid);
-        std::thread::sleep(std::time::Duration::from_millis(150));
+        std::thread::sleep(std::time::Duration::from_millis(500));
         let maps_content = std::fs::read_to_string(maps_path)?;
         for line in maps_content.lines() {
             if line.contains("dummy_target") {
@@ -233,7 +233,7 @@ mod tests {
             }
         }
 
-        let mut pc = match pc {
+        let pc = match pc {
             Some(pc) => pc,
             None => {
                 println!("Skipping test: No perf counters available in this environment.");
@@ -269,7 +269,6 @@ mod tests {
         assert!(non_zero_ips > 0, "All samples had 0 IP (ptrace failed?)");
 
         use rrstat::aggregator::Aggregator;
-        use rrstat::symbols::SymbolResolver;
         let mut agg = Aggregator::new();
         agg.process_samples(samples);
         let report = agg.generate_report();

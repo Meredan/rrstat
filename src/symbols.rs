@@ -77,7 +77,7 @@ impl SymbolResolver {
         let info = {
             let context = match self.get_context(&mapping.pathname) {
                 Ok(ctx) => ctx,
-                Err(e) => {
+                Err(_e) => {
                     // This is expected for [vdso], [vvar], anonymous mappings, or inaccessible files
                     // We don't want to error out the whole resolution, just return a fallback info later
                     return Ok(SymbolInfo {
