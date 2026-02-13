@@ -168,10 +168,10 @@ mod tests {
             }
         }
         
-        // Create fake samples
-        let s1 = Sample { pid: pid as i32, instruction_pointer: load_base + addr_a, value: 1, timestamp: 100 };
-        let s2 = Sample { pid: pid as i32, instruction_pointer: load_base + addr_b, value: 1, timestamp: 200 };
-        let s3 = Sample { pid: pid as i32, instruction_pointer: load_base + addr_a, value: 1, timestamp: 300 };
+        // Create fake samples with advancing values
+        let s1 = Sample { pid: pid as i32, instruction_pointer: load_base + addr_a, value: 100, timestamp: 100 };
+        let s2 = Sample { pid: pid as i32, instruction_pointer: load_base + addr_b, value: 200, timestamp: 200 };
+        let s3 = Sample { pid: pid as i32, instruction_pointer: load_base + addr_a, value: 500, timestamp: 300 };
 
         let mut agg = Aggregator::new();
         agg.process_samples(vec![s1, s2, s3]);
@@ -179,10 +179,13 @@ mod tests {
         let report = agg.generate_report();
         println!("Report: {:?}", report);
 
-        // Verification
-        assert_eq!(report.total_samples, 3);
-        let has_func_a = report.stats.iter().any(|s| s.name.contains("func_a") && s.count == 2);
-        let has_func_b = report.stats.iter().any(|s| s.name.contains("func_b") && s.count == 1);
+        // Verification: 
+        // Interval 1 (s2): delta = 200-100 = 100, IP = addr_b
+        // Interval 2 (s3): delta = 500-200 = 300, IP = addr_a
+        // Total weight = 400
+        assert_eq!(report.total_samples, 400);
+        let has_func_a = report.stats.iter().any(|s| s.name.contains("func_a") && s.count == 300);
+        let has_func_b = report.stats.iter().any(|s| s.name.contains("func_b") && s.count == 100);
         
         // Cleanup
         let _ = child.kill();

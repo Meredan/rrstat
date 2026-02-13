@@ -1,5 +1,5 @@
 use clap::Parser;
-use perf_event::events::{Hardware, Event};
+use perf_event::events::{Hardware, Event, Software};
 use anyhow::{bail, Result};
 
 
@@ -22,6 +22,10 @@ pub fn parse_event(event_name: &str) -> Result<Event> {
         "instructions" => Ok(Event::Hardware(Hardware::INSTRUCTIONS)),
         "cache-references" => Ok(Event::Hardware(Hardware::CACHE_REFERENCES)),
         "cache-misses" => Ok(Event::Hardware(Hardware::CACHE_MISSES)),
+        "task-clock" => Ok(Event::Software(Software::TASK_CLOCK)),
+        "cpu-clock" | "wait-time" => Ok(Event::Software(Software::CPU_CLOCK)),
+        "context-switches" => Ok(Event::Software(Software::CONTEXT_SWITCHES)),
+        "page-faults" => Ok(Event::Software(Software::PAGE_FAULTS)),
         _ => bail!("Unknown event: {}", event_name),
     }
 }

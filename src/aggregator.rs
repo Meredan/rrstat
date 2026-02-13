@@ -29,9 +29,24 @@ impl Aggregator {
     }
 
     pub fn process_samples(&mut self, samples: Vec<Sample>) {
-        for sample in samples {
-            let key = self.fold_stack(sample.pid as u32, sample.instruction_pointer);
-            *self.counts.entry(key).or_insert(0) += 1;
+        if samples.len() < 2 {
+            for sample in samples {
+                let key = self.fold_stack(sample.pid as u32, sample.instruction_pointer);
+                *self.counts.entry(key).or_insert(0) += 1;
+            }
+            return;
+        }
+
+        for i in 1..samples.len() {
+            let prev = &samples[i-1];
+            let curr = &samples[i];
+            let delta = curr.value.saturating_sub(prev.value);
+            
+            let key = self.fold_stack(curr.pid as u32, curr.instruction_pointer);
+            // We use delta as the weight. If delta is 0 (e.g. no cycles occurred), we don't add anything.
+            // However, to ensure wall-clock sampling still works if delta is 0 but it took time, 
+            // we could add a minimum of 1, but for hardware counters delta is usually the point.
+            *self.counts.entry(key).or_insert(0) += delta as usize;
         }
     }
 
